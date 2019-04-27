@@ -486,6 +486,26 @@ Java_one_nio_net_NativeSocket_recvFrom(JNIEnv* env, jobject self, jlong buffer, 
     return 0;
 }
 
+JNIEXPORT jint JNICALL
+Java_one_nio_net_NativeSocket_recvFromWoAddr(JNIEnv* env, jobject self, jlong buffer, jint count,
+                                       jint flags) {
+    int fd = (*env)->GetIntField(env, self, f_fd);
+    if (fd == -1) {
+        throw_socket_closed(env);
+    } else if (count != 0) {
+        int result = recvfrom(fd, (void*)buffer, count, flags, NULL, NULL);
+
+        if (result > 0 || result == 0 && is_udp_socket(fd)) {
+            return result;
+        } else if (result == 0) {
+            throw_socket_closed(env);
+        } else if (is_io_exception(fd)) {
+            throw_io_exception(env);
+        }
+    }
+    return 0;
+}
+
 JNIEXPORT void JNICALL
 Java_one_nio_net_NativeSocket_getsockname(JNIEnv* env, jobject self, jbyteArray buffer) {
     int fd = (*env)->GetIntField(env, self, f_fd);

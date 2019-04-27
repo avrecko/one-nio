@@ -16,13 +16,16 @@
 
 package one.nio.net;
 
+import one.nio.os.Mem;
 import one.nio.os.NativeLibrary;
+import one.nio.util.JavaInternals;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
+import java.lang.reflect.Method;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.ByteChannel;
 
@@ -60,6 +63,37 @@ public abstract class Socket implements ByteChannel {
     public static final int IPTOS_THROUGHPUT  = 0x08;
     public static final int IPTOS_LOWDELAY    = 0x10;
 
+    private static final DatagramSocketImpl javaInternalSocketImpl;
+    private static final FileDescriptor javaInternalSocketFd;
+    private static final Method joinMCastMethod;
+    private static final Method leaveMCastMethod;
+
+    static {
+        DatagramSocketImpl impl;
+        FileDescriptor fd;
+        Method join;
+        Method leave;
+        try {
+            Class implClass = Class.forName("java.net.PlainDatagramSocketImpl");
+            join = JavaInternals.findMethod(implClass, "join", InetAddress.class, NetworkInterface.class);
+            join.setAccessible(true);
+            leave = JavaInternals.findMethod(implClass, "leave", InetAddress.class, NetworkInterface.class);
+            leave.setAccessible(true);
+            impl = (DatagramSocketImpl) JavaInternals.getUnsafe().allocateInstance(implClass);
+            fd = new FileDescriptor();
+            JavaInternals.setObjectField(impl, "fd", fd);
+        } catch (Exception e) {
+             impl = null;
+             fd = null;
+             join = null;
+             leave = null;
+        }
+        javaInternalSocketImpl = impl;
+        javaInternalSocketFd = fd;
+        joinMCastMethod = join;
+        leaveMCastMethod = leave;
+    }
+
     public abstract boolean isOpen();
     public abstract void close();
     public abstract Socket accept() throws IOException;
@@ -74,6 +108,7 @@ public abstract class Socket implements ByteChannel {
     public abstract int read(byte[] data, int offset, int count, int flags) throws IOException;
     public abstract void readFully(byte[] data, int offset, int count) throws IOException;
     public abstract InetSocketAddress recv(ByteBuffer buffer, int flags) throws IOException;
+    public abstract int recvWoAddr(ByteBuffer buffer, int flags) throws IOException;
     public abstract long sendFile(RandomAccessFile file, long offset, long count) throws IOException;
     public abstract void setBlocking(boolean blocking);
     public abstract void setTimeout(int timeout);
@@ -92,6 +127,8 @@ public abstract class Socket implements ByteChannel {
     public abstract Socket sslWrap(SslContext context) throws IOException;
     public abstract Socket sslUnwrap();
     public abstract SslContext getSslContext();
+    public abstract void joinGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException;
+    public abstract void leaveGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException;
 
     public Socket acceptNonBlocking() throws IOException {
         Socket s = accept();
@@ -125,6 +162,22 @@ public abstract class Socket implements ByteChannel {
 
     public static Socket createDatagramSocket() throws IOException {
         return NativeLibrary.IS_SUPPORTED ? new NativeSocket(true) : new JavaDatagramSocket();
+    }
+
+    public static Socket createDatagramSocket(int port) throws IOException {
+        return createDatagramSocket(new InetSocketAddress(port));
+    }
+
+    public static Socket createDatagramSocket(String host, int port) throws IOException {
+        return createDatagramSocket(new InetSocketAddress(host, port));
+    }
+
+    public static Socket createDatagramSocket(InetSocketAddress address) throws IOException {
+        Socket socket = NativeLibrary.IS_SUPPORTED ? new NativeSocket(true) : new JavaDatagramSocket();
+
+        socket.setReuseAddr(true, false);
+        socket.bind(address.getAddress(), address.getPort(), -1 /* not used */);
+        return socket;
     }
 
     public static Socket connectInet(InetAddress address, int port) throws IOException {
@@ -167,4 +220,41 @@ public abstract class Socket implements ByteChannel {
         }
         throw new IOException("Operation is not supported");
     }
+
+    public static void joinGroup(int fd, InetAddress mcastaddr, NetworkInterface netIf)
+    {
+        if (joinMCastMethod == null)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        synchronized (javaInternalSocketImpl)
+        {
+            try {
+                Mem.setFD(javaInternalSocketFd, fd);
+                joinMCastMethod.invoke(javaInternalSocketImpl, mcastaddr, netIf);
+            } catch (Exception e) {
+                JavaInternals.uncheckedThrow(e);
+            }
+        }
+    }
+
+    public static void leaveGroup(int fd, InetAddress mcastaddr, NetworkInterface netIf)
+    {
+        if (leaveMCastMethod == null)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        synchronized (javaInternalSocketImpl)
+        {
+            try {
+                Mem.setFD(javaInternalSocketFd, fd);
+                leaveMCastMethod.invoke(javaInternalSocketImpl, mcastaddr, netIf);
+            } catch (Exception e) {
+                JavaInternals.uncheckedThrow(e);
+            }
+        }
+    }
+
 }

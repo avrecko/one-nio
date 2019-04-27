@@ -16,12 +16,14 @@
 
 package one.nio.net;
 
+import one.nio.os.Mem;
+import one.nio.util.JavaInternals;
+
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketException;
-import java.net.StandardSocketOptions;
+import java.lang.reflect.Field;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectableChannel;
@@ -30,6 +32,19 @@ import java.nio.channels.SelectableChannel;
  * @author ivan.grigoryev
  */
 final class JavaDatagramSocket extends SelectableJavaSocket {
+
+    private static final Field internalFd;
+
+    static {
+        Field fdCandidate = null;
+        try {
+            fdCandidate = JavaInternals.findFieldRecursively(Class.forName("sun.nio.ch.DatagramChannelImpl"), "fdVal");
+            fdCandidate.setAccessible(true);
+        } catch (Exception e) {}
+
+        internalFd = fdCandidate;
+    }
+
     final DatagramChannel ch;
 
     JavaDatagramSocket() throws IOException {
@@ -103,6 +118,13 @@ final class JavaDatagramSocket extends SelectableJavaSocket {
     @Override
     public final InetSocketAddress recv(ByteBuffer buffer, int flags) throws IOException {
         return (InetSocketAddress) ch.receive(buffer);
+    }
+
+    @Override
+    public int recvWoAddr(ByteBuffer buffer, int flags) throws IOException {
+        int initial = buffer.remaining();
+        recv(buffer, flags);
+        return initial - buffer.remaining();
     }
 
     @Override
@@ -232,6 +254,34 @@ final class JavaDatagramSocket extends SelectableJavaSocket {
     @Override
     public SslContext getSslContext() {
         return null;
+    }
+
+    @Override
+    public void joinGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+        if (internalFd == null) {
+            throw new UnsupportedOperationException();
+        }
+
+        try {
+            int fd = (int) internalFd.get(ch);
+            Socket.joinGroup(fd, mcastaddr, netIf);
+        } catch (Exception e) {
+            JavaInternals.uncheckedThrow(e);
+        }
+    }
+
+    @Override
+    public void leaveGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+        if (internalFd == null) {
+            throw new UnsupportedOperationException();
+        }
+
+        try {
+            int fd = Mem.getFD((FileDescriptor) internalFd.get(ch));
+            Socket.leaveGroup(fd, mcastaddr, netIf);
+        } catch (Exception e) {
+            JavaInternals.uncheckedThrow(e);
+        }
     }
 
     @Override

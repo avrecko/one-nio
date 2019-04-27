@@ -21,15 +21,13 @@ import one.nio.mem.DirectMemory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketException;
-import java.net.StandardSocketOptions;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SocketChannel;
 
 final class JavaSocket extends SelectableJavaSocket {
+
     final SocketChannel ch;
 
     JavaSocket() throws IOException {
@@ -114,6 +112,11 @@ final class JavaSocket extends SelectableJavaSocket {
 
     @Override
     public final InetSocketAddress recv(ByteBuffer buffer, int flags) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int recvWoAddr(ByteBuffer buffer, int flags) throws IOException {
         throw new UnsupportedOperationException();
     }
 
@@ -273,5 +276,15 @@ final class JavaSocket extends SelectableJavaSocket {
     @Override
     public SelectableChannel getSelectableChannel() {
         return ch;
+    }
+
+    @Override
+    public void joinGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+            throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void leaveGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+            throw new UnsupportedOperationException();
     }
 }

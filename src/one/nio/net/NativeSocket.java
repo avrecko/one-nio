@@ -21,9 +21,7 @@ import one.nio.os.Mem;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
@@ -165,6 +163,16 @@ class NativeSocket extends Socket {
     }
 
     @Override
+    public int recvWoAddr(ByteBuffer buffer, int flags) throws IOException {
+        if (!buffer.isDirect()) {
+            throw new UnsupportedOperationException();
+        }
+
+        long bufAddress = DirectMemory.getAddress(buffer) + buffer.position();
+        return recvFromWoAddr(bufAddress, buffer.remaining(), flags);
+    }
+
+    @Override
     public native void readFully(byte[] data, int offset, int count) throws IOException;
 
     @Override
@@ -194,6 +202,16 @@ class NativeSocket extends Socket {
         }
         src.position(src.position() + bytes);
         return bytes;
+    }
+
+    @Override
+    public void joinGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+        Socket.joinGroup(fd, mcastaddr, netIf);
+    }
+
+    @Override
+    public void leaveGroup(InetAddress mcastaddr, NetworkInterface netIf) throws IOException {
+        Socket.leaveGroup(fd, mcastaddr, netIf);
     }
 
     @Override
@@ -248,4 +266,5 @@ class NativeSocket extends Socket {
     native void getpeername(byte[] buffer);
     native int sendTo(long buf, int size, int flags, byte[] address, int port) throws IOException;
     native int recvFrom(long buf, int maxSize, int flags, byte[] addrBuffer) throws IOException;
+    native int recvFromWoAddr(long buf, int maxSize, int flags) throws IOException;
 }
